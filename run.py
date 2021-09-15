@@ -2,9 +2,9 @@ from turtle import pd
 from apply import Applier
 
 
-patient_id = "SMART-1081332"
-pd_id = "17293"
+patient_id = "30"
+pd_id = "4"
 
 
-applier = Applier()
+applier = Applier(base='https://api.logicahealth.org/FerociousCilantro/open')
 applier.create_careplan(pd_id, patient_id)
