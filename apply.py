@@ -9,12 +9,28 @@ from fhir.resources.servicerequest import ServiceRequest
 from fhir.resources.operationoutcome import OperationOutcome
 from fhir.resources.patient import Patient
 from fhir.resources.reference import Reference
+from fhir.resources.capabilitystatement import CapabilityStatement
 
 class Applier:
 
     def __init__(self, base='https://api.logicahealth.org/terribleLizard/open'):
         self._endpoint = base
         self._client = requests.Session()
+
+    def get_capability_statement(self):
+        """
+        This doesn't work, at all - suckers
+        """
+        SUPPORTED_VERSIONS = ["4.5.0", "4.0.1"]
+        REQUIRED_RESOURCES = ['PlanDefinition', 'ActivityDefinition']
+        _cs = self._client.get(f"{self._endpoint}/metadata")
+        cp = CapabilityStatement(**_cs.json())
+        if cp.fhirVersion not in SUPPORTED_VERSIONS:
+            raise ValueError(f"Version {cp.fhirVersion} is not supported")
+        if 'PlanDefinition' not in [x.resource for x in cp.rest]:
+            print('using internal SoA')
+        else:
+            print("Using EHR SoA")
 
     def create_subject(self, research_subject_id, patient_id, research_study_id):
         _rs = self._client.get(f"{self._endpoint}/ResearchStudy/{research_study_id}")
@@ -54,16 +70,22 @@ class Applier:
                 print(f"Creating ServiceRequest for {action.definitionUri}")
                 sr = self.create_servicerequest(activity_definition_id=ad.id, 
                     patient_id=patient_id)
-                if not cp.activity:
-                    cp.activity = []
-                cp.activity.append(dict(reference=Reference(reference=f"ServiceRequest/{sr.id}"), 
-                    detail=dict(status="scheduled",
-                    kind="ServiceRequest", 
-                    instantiatesCanonical=[f"ActivityDefinition/{ad.id}"])))
+                # if not cp.activity:
+                #     cp.activity = []
+                # cp.activity.append(dict(reference=Reference(reference=f"ServiceRequest/{sr.id}"), 
+                #     detail=dict(status="scheduled",
+                #     kind="ServiceRequest", 
+                #     instantiatesCanonical=[f"ActivityDefinition/{ad.id}"])))
             elif resource['resourceType'] == "PlanDefinition":
                 print(f"Creating CarePlan for {action.definitionUri}")
                 _cp = self.create_careplan(action.definitionUri.split("/")[-1], patient_id)
                 children.append(_cp)
+                if not cp.activity:
+                    cp.activity = []
+                cp.activity.append(dict(reference=Reference(reference=f"CarePlan/{_cp.id}"), 
+                    detail=dict(status="scheduled",
+                    kind="ServiceRequest", 
+                    instantiatesCanonical=[f"ActivityDefinition/{ad.id}"])))
             else:
                 print("Can't process", resource)
                 continue
@@ -75,6 +97,7 @@ class Applier:
             print(f"Created CarePlan {pcp.id}")
             child: CarePlan
             for child in children:
+                print(f"Adding partOf relationship for {child.id}")
                 if not child.partOf:
                     child.partOf = []
                 child.partOf.append(f"CarePlan/{pcp.id}") 
